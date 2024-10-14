@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="./style.css" />
+    <title>PDF Test</title>
+  </head>
+  <body>
+    <div class="header">
+      <div id="controls">
+        <button id="prev-page">Previous Page</button>
+        <span id="page-info"></span>
+        <button id="next-page">Next Page</button>
+      </div>
+      <input type="file" id="fileInput" accept="application/pdf" />
+    </div>
+    <div id="viewerContainer">
+      <canvas id="pdf-canvas"></canvas>
+      <canvas id="text-canvas"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.min.js"></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
