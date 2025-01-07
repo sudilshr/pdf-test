@@ -1,4 +1,5 @@
-import { parseColors } from './color.js';
+import { parseTextVisibility } from './utils.js';
+import { mimicOcr } from './spatial.js';
 
 const canvas = document.getElementById('pdf-canvas');
 const ctx = canvas.getContext('2d');
@@ -6,10 +7,15 @@ const fileInput = document.getElementById('fileInput');
 const prevPageBtn = document.getElementById('prev-page');
 const nextPageBtn = document.getElementById('next-page');
 const pageInfo = document.getElementById('page-info');
+const extractorSelect = document.getElementById('extractor');
+const blockTypeSelect = document.getElementById('block-type');
 
 let pdfDoc = null;
 let currentPage = 1;
 let totalPages = 0;
+let ocrData = null;
+let selectedExtractor = extractorSelect.value;
+let selectedBlockType = blockTypeSelect.value;
 
 // Disable the page navigation buttons initially
 prevPageBtn.disabled = true;
@@ -23,12 +29,22 @@ fileInput.addEventListener('change', (event) => {
   }
 });
 
-// Load "hidden-text.pdf" by default on page load
+extractorSelect.addEventListener('change', (event) => {
+  selectedExtractor = event.target.value;
+  loadPageAndText(currentPage);
+});
+
+blockTypeSelect.addEventListener('change', (event) => {
+  selectedBlockType = event.target.value;
+  loadPageAndText(currentPage);
+});
+
+// Load "mytables.pdf" by default on page load
 window.addEventListener('load', () => {
-  fetch('hidden-text.pdf')
+  fetch('mytables.pdf')
     .then((response) => response.blob())
     .then((blob) => {
-      const file = new File([blob], 'hidden-text.pdf', {
+      const file = new File([blob], 'mytables.pdf', {
         type: 'application/pdf',
       });
       loadPdf(file);
@@ -63,8 +79,10 @@ function loadPdf(file) {
   const fileReader = new FileReader();
 
   // Read the selected file as an ArrayBuffer
-  fileReader.onload = function () {
+  fileReader.onload = async function () {
     const typedarray = new Uint8Array(this.result);
+
+    ocrData = await extractPdf(typedarray);
 
     // Load PDF from the ArrayBuffer
     pdfjsLib.disableWorker = true;
@@ -80,9 +98,78 @@ function loadPdf(file) {
   fileReader.readAsArrayBuffer(file);
 }
 
+async function extractPdf(typedarray) {
+  // # File Upload
+  // curl -F "file=@document.pdf" http://localhost:5000/extract
+  // # Base64 JSON
+  // curl -X POST -H "Content-Type: application/json"          -d '{"pdf_base64":"base64_encoded_pdf_content"}'          http://localhost:5000/extract
+
+  const data = {
+    pdfplumber: [],
+    pymupdf: [],
+    pdfminer: [],
+    pdfjs: [],
+  };
+  const base64 = btoa(
+    typedarray.reduce((data, byte) => data + String.fromCharCode(byte), '')
+  );
+  
+  // console.time('extract:pdfplumber');
+  // const res = await fetch('http://localhost:5000/extract', {
+  //   method: 'POST',
+  //   headers: {
+  //     'Content-Type': 'application/json',
+  //   },
+  //   body: JSON.stringify({
+  //     pdf_base64: base64,
+  //     extractor: 'pdfplumber',
+  //   }),
+  // });
+  // data.pdfplumber = await res.json();
+  // console.timeEnd('extract:pdfplumber');
+
+  // console.time('extract:pymupdf');
+  // const res2 = await fetch('http://localhost:5000/extract', {
+  //   method: 'POST',
+  //   headers: {
+  //     'Content-Type': 'application/json',
+  //   },
+  //   body: JSON.stringify({
+  //     pdf_base64: base64,
+  //     extractor: 'pymupdf',
+  //   }),
+  // });
+  // data.pymupdf = await res2.json();
+  // console.timeEnd('extract:pymupdf');
+
+  console.time('extract:pdfminer');
+  const res3 = await fetch('http://localhost:5000/extract', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      pdf_base64: base64,
+      extractor: 'pdfminer',
+    }),
+  });
+  data.pdfminer = await res3.json();
+  console.timeEnd('extract:pdfminer');
+
+  console.time('extract:pdfjs');
+  pdfjsLib.disableWorker = true;
+  const pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
+  data.pdfjs = await mimicOcr(pdfDoc);
+  console.timeEnd('extract:pdfjs');
+
+  console.log('data', data);
+
+  return data;
+}
+
 function loadPageAndText(pageNum) {
   // Fetch the specified page
-  pdfDoc.getPage(pageNum).then((page) => {
+  pdfDoc.getPage(pageNum).then(async (page) => {
     const viewport = page.getViewport({ scale: 1 });
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -91,61 +178,85 @@ function loadPageAndText(pageNum) {
     /** @type {CanvasRenderingContext2D} */
     const pdfCtx = pdfCanvas.getContext('2d');
 
-    // Get the second canvas context
-    const textCanvas = document.getElementById('text-canvas');
-    /** @type {CanvasRenderingContext2D} */
-    const textCtx = textCanvas.getContext('2d');
-
     // Render the PDF page into canvas context
     const renderContext = {
       canvasContext: pdfCtx,
       viewport: viewport,
     };
-    page.render(renderContext);
+    await page.render(renderContext).promise;
 
-    // Extract text content from the page
-    page.getTextContent().then((textContent) => {
-      // Set the canvas dimensions to match the PDF page
-      textCanvas.width = viewport.width;
-      textCanvas.height = viewport.height;
+    // const { items } = await page.getTextContent();
+    // console.log('items', items);
 
-      // Clear the text canvas
-      textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+    // const fakeOcr = await mimicOcr(pdfDoc);
 
-      // add border to pdf canvas
-      pdfCtx.strokeStyle = 'gray';
-      pdfCtx.lineWidth = 2;
-      pdfCtx.strokeRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+    const fakeOcr = ocrData[selectedExtractor];
 
-      // add border to text canvas
-      textCtx.strokeStyle = 'gray';
-      textCtx.lineWidth = 2;
-      textCtx.strokeRect(0, 0, textCanvas.width, textCanvas.height);
+    const blocks = fakeOcr[pageNum - 1].textAnnotations;
 
-      let texts = textContent.items;
-      console.time('color');
-      parseColors(
-        pdfCtx.getImageData(0, 0, viewport.width, viewport.height),
-        textContent.items
-      );
-      console.timeEnd('color');
-      console.log(texts);
+    // add border to pdf canvas
+    pdfCtx.strokeStyle = 'gray';
+    pdfCtx.lineWidth = 2;
+    pdfCtx.strokeRect(0, 0, pdfCanvas.width, pdfCanvas.height);
 
-      // Render text on the second canvas at the exact position
-      texts.forEach((text) => {
-        const { str, transform, width, height, color } = text;
-        const x = transform[4];
-        const y = viewport.height - transform[5];
-        textCtx.font = `${height}px sans-serif`;
-        textCtx.fillStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-        textCtx.fillText(str, x, y);
-      });
+    // Render text on the second canvas at the exact position
+    // check for null and undefined as well
+    // blocks
+    //   .filter((block) => block.blockType === 'WORD')
+    //   .forEach((word) => {
+    //     const {
+    //       description,
+    //       boundingPoly: { vertices },
+    //     } = word;
+    //     const x = vertices[0].x;
+    //     const y = vertices[0].y;
+    //     const width = vertices[1].x - vertices[0].x;
+    //     const height = vertices[2].y - vertices[0].y;
+    //     pdfCtx.font = `8px sans-serif`;
+    //     pdfCtx.fillStyle = 'red';
+    //     pdfCtx.fillText(description, x, y);
 
-      // Update text output
-      let text = '';
-      textContent.items.forEach((item) => {
-        text += item.str + '\n';
-      });
+    //     // draw bounding box
+    //     // assign random color
+    //     const color = `#${Math.floor(Math.random() * 16777215).toString(16)}`;
+    //     pdfCtx.strokeStyle = color;
+    //     pdfCtx.lineWidth = 1;
+    //     pdfCtx.strokeRect(x, y, width, height);
+    //   });
+
+    const RENDER_MODE = selectedBlockType; // LINE, WORD
+    const lineBlocks = blocks.filter((block) => block.blockType === 'LINE');
+    const relationshipIds = lineBlocks.flatMap((line) =>
+      line.relationships && line.relationships.length
+        ? line.relationships[0].ids
+        : []
+    );
+
+    const wordBlocks = blocks.filter((block) => block.blockType === 'WORD');
+    const renderBlocks =
+      RENDER_MODE === 'WORD'
+        ? wordBlocks.filter((word) => relationshipIds.includes(word.id))
+        : lineBlocks;
+    renderBlocks.forEach((word) => {
+      const {
+        description,
+        boundingPoly: { vertices },
+      } = word;
+      const x = vertices[0].x;
+      const y = vertices[0].y;
+      const width = vertices[1].x - vertices[0].x;
+      const height = vertices[2].y - vertices[0].y;
+      pdfCtx.font = `8px sans-serif`;
+      pdfCtx.fillStyle = 'red';
+      pdfCtx.fillText(description, x, y);
+
+      // draw bounding box
+      // assign random color
+      // const color = `#${Math.floor(Math.random() * 16777215).toString(16)}`;
+      const color = 'blue';
+      pdfCtx.strokeStyle = color;
+      pdfCtx.lineWidth = 1;
+      pdfCtx.strokeRect(x, y, width, height);
     });
   });
 }

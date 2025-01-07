@@ -14,10 +14,20 @@
         <button id="next-page">Next Page</button>
       </div>
       <input type="file" id="fileInput" accept="application/pdf" />
+      <select id="extractor">
+        <option value="pdfjs">pdfjs</option>
+        <option value="pdfplumber">pdfplumber</option>
+        <option value="pymupdf">pymupdf</option>
+        <option value="pdfminer" selected>pdfminer</option>
+      </select>
+      <select id="block-type">
+        <option value="WORD" selected>WORD</option>
+        <option value="LINE">LINE</option>
+      </select>
     </div>
     <div id="viewerContainer">
-      <canvas id="pdf-canvas"></canvas>
-      <canvas id="text-canvas"></canvas>
+      <canvas id="pdf-canvas" style="width: 80%"></canvas>
+      <!-- <canvas id="text-canvas" style="width: 60%;"></canvas> -->
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.min.js"></script>
